@@ -1,131 +1,91 @@
 import streamlit as st
 import pandas as pd
-import datetime
-from PIL import Image
 import plotly.express as px
-import plotly.graph_objects as go
+import seaborn as sns
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
 
-# reading the data from excel file
-df = pd.read_excel("Adidas.xlsx")
-st.set_page_config(layout="wide")
-st.markdown('<style>div.block-container{padding-top:1rem;}</style>', unsafe_allow_html=True)
-image = Image.open('adidas-logo.jpg')
+# Set the page configuration for the dashboard
+st.set_page_config(page_title="Instagram Influencer Analysis", layout="wide")
 
-col1, col2 = st.columns([0.1,0.9])
+# Function to load and preprocess data
+@st.cache_data
+def load_data():
+    df = pd.read_csv("instagram.csv", encoding='utf-8', skipinitialspace=True)
+    df.columns = df.columns.str.strip().str.replace("\n", " ").str.replace("  ", " ")
+    
+    # Convert 'K' and 'M' in numerical fields to thousands and millions
+    def convert_k_m_to_number(x):
+        if isinstance(x, str):
+            if 'K' in x:
+                return float(x.replace('K', '')) * 1e3
+            elif 'M' in x:
+                return float(x.replace('M', '')) * 1e6
+        return float(x)
+
+    df['Followers'] = df['Followers'].apply(convert_k_m_to_number)
+    df['Authentic engagement'] = df['Authentic engagement'].apply(convert_k_m_to_number)
+    df['Engagement avg'] = df['Engagement avg'].apply(convert_k_m_to_number)
+    
+    return df
+
+df = load_data()
+
+# Title of the dashboard
+#st.title("Instagram Influencer Dashboard")
+
+# Display the raw data as a table
+# st.subheader("Data Overview")
+# if st.checkbox("Show raw data"):
+#     st.write(df)
+
+# Layout for plots
+col1, col2, col3 = st.columns(3)
 with col1:
-    st.image(image,width=100)
+    # Histogram of followers distribution
+    #st.subheader("Distribution of Followers")
+    fig = px.histogram(df, x='Followers', nbins=50, title="Distribution of Followers")
+    st.plotly_chart(fig, use_container_width=True)
 
-html_title = """
-    <style>
-    .title-test {
-    font-weight:bold;
-    padding:5px;
-    border-radius:6px;
-    }
-    </style>
-    <center><h1 class="title-test">Adidas Interactive Sales Dashboard</h1></center>"""
 with col2:
-    st.markdown(html_title, unsafe_allow_html=True)
+    # Box plot for authentic engagement by category
+    #st.subheader("Authentic Engagement by Category")
+    fig = px.box(df, x='category_1', y='Authentic engagement', color='category_1',
+                 title="Authentic Engagement by Category")
+    st.plotly_chart(fig, use_container_width=True)
 
-col3, col4, col5 = st.columns([0.1,0.45,0.45])
 with col3:
-    box_date = str(datetime.datetime.now().strftime("%d %B %Y"))
-    st.write(f"Last updated by:  \n {box_date}")
+    # Box plot for average engagement by category
+    #st.subheader("Average Engagement by Category")
+    fig2 = px.box(df, x='category_1', y='Engagement avg', color='category_1',
+                  title="Average Engagement by Category")
+    st.plotly_chart(fig2, use_container_width=True)
 
+col4, col5, col6 = st.columns(3)
 with col4:
-    fig = px.bar(df, x = "Retailer", y = "TotalSales", labels={"TotalSales" : "Total Sales {$}"},
-                 title = "Total Sales by Retailer", hover_data=["TotalSales"],
-                 template="gridon",height=500)
-    st.plotly_chart(fig,use_container_width=True)
-
-_, view1, dwn1, view2, dwn2 = st.columns([0.15,0.20,0.20,0.20,0.20])
-with view1:
-    expander = st.expander("Retailer wise Sales")
-    data = df[["Retailer","TotalSales"]].groupby(by="Retailer")["TotalSales"].sum()
-    expander.write(data)
-with dwn1:
-    st.download_button("Get Data", data = data.to_csv().encode("utf-8"),
-                       file_name="RetailerSales.csv", mime="text/csv")
-
-df["Month_Year"] = df["InvoiceDate"].dt.strftime("%b'%y")
-result = df.groupby(by = df["Month_Year"])["TotalSales"].sum().reset_index()
+    # Pie chart for audience country distribution
+    #st.subheader("Audience Country Distribution")
+    country_counts = df['Audience country(mostly)'].value_counts()
+    fig = px.pie(values=country_counts, names=country_counts.index, title="Audience Country Distribution")
+    st.plotly_chart(fig, use_container_width=True)
 
 with col5:
-    fig1 = px.line(result, x = "Month_Year", y = "TotalSales", title="Total Sales Over Time",
-                   template="gridon")
-    st.plotly_chart(fig1,use_container_width=True)
+    # Scatter plot with regression line for engagement vs followers
+    #st.subheader("Authentic Engagement vs. Followers")
+    fig = px.scatter(df, x='Followers', y='Authentic engagement', trendline="ols",
+                     title="Authentic Engagement vs. Followers with Regression Line")
+    st.plotly_chart(fig, use_container_width=True)
 
-with view2:
-    expander = st.expander("Monthly Sales")
-    data = result
-    expander.write(data)
-with dwn2:
-    st.download_button("Get Data", data = result.to_csv().encode("utf-8"),
-                       file_name="Monthly Sales.csv", mime="text/csv")
-    
-st.divider()
-
-result1 = df.groupby(by="State")[["TotalSales","UnitsSold"]].sum().reset_index()
-
-# add the units sold as a line chart on a secondary y-axis
-fig3 = go.Figure()
-fig3.add_trace(go.Bar(x = result1["State"], y = result1["TotalSales"], name = "Total Sales"))
-fig3.add_trace(go.Scatter(x=result1["State"], y = result1["UnitsSold"], mode = "lines",
-                          name ="Units Sold", yaxis="y2"))
-fig3.update_layout(
-    title = "Total Sales and Units Sold by State",
-    xaxis = dict(title="State"),
-    yaxis = dict(title="Total Sales", showgrid = False),
-    yaxis2 = dict(title="Units Sold", overlaying = "y", side = "right"),
-    template = "gridon",
-    legend = dict(x=1,y=1.1)
-)
-_, col6 = st.columns([0.1,1])
 with col6:
-    st.plotly_chart(fig3,use_container_width=True)
+    # Correlation heatmap
+    #st.subheader("Correlation Heatmap")
+    corr = df[['Followers', 'Authentic engagement', 'Engagement avg']].corr()
+    plt.figure(figsize=(7, 4))  # Adjust size to fit within the column
+    sns.heatmap(corr, annot=True, cmap='coolwarm')
+    st.pyplot(plt)
 
-_, view3, dwn3 = st.columns([0.5,0.45,0.45])
-with view3:
-    expander = st.expander("View Data for Sales by Units Sold")
-    expander.write(result1)
-with dwn3:
-    st.download_button("Get Data", data = result1.to_csv().encode("utf-8"), 
-                       file_name = "Sales_by_UnitsSold.csv", mime="text/csv")
-st.divider()
-
-_, col7 = st.columns([0.1,1])
-treemap = df[["Region","City","TotalSales"]].groupby(by = ["Region","City"])["TotalSales"].sum().reset_index()
-
-def format_sales(value):
-    if value >= 0:
-        return '{:.2f} Lakh'.format(value / 1_000_00)
-
-treemap["TotalSales (Formatted)"] = treemap["TotalSales"].apply(format_sales)
-
-fig4 = px.treemap(treemap, path = ["Region","City"], values = "TotalSales",
-                  hover_name = "TotalSales (Formatted)",
-                  hover_data = ["TotalSales (Formatted)"],
-                  color = "City", height = 700, width = 600)
-fig4.update_traces(textinfo="label+value")
-
-with col7:
-    st.subheader(":point_right: Total Sales by Region and City in Treemap")
-    st.plotly_chart(fig4,use_container_width=True)
-
-_, view4, dwn4 = st.columns([0.5,0.45,0.45])
-with view4:
-    result2 = df[["Region","City","TotalSales"]].groupby(by=["Region","City"])["TotalSales"].sum()
-    expander = st.expander("View data for Total Sales by Region and City")
-    expander.write(result2)
-with dwn4:
-    st.download_button("Get Data", data = result2.to_csv().encode("utf-8"),
-                                        file_name="Sales_by_Region.csv", mime="text.csv")
-
-_,view5, dwn5 = st.columns([0.5,0.45,0.45])
-with view5:
-    expander = st.expander("View Sales Raw Data")
-    expander.write(df)
-with dwn5:
-    st.download_button("Get Raw Data", data = df.to_csv().encode("utf-8"),
-                       file_name = "SalesRawData.csv", mime="text/csv")
-st.divider()
+# Using an additional row for the bar chart
+#st.subheader("Top Influencers by Authentic Engagement")
+top_engagement = df.nlargest(10, 'Authentic engagement')[['instagram name', 'Authentic engagement']]
+fig = px.bar(top_engagement, x='instagram name', y='Authentic engagement', title="Top Influencers by Authentic Engagement")
+st.plotly_chart(fig, use_container_width=True)
